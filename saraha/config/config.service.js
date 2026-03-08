@@ -8,8 +8,9 @@ const envPath = {
     production: `.env.production`,
 }
 
-config({ path: resolve(`./config/${envPath[NODE_ENV]}`) })
-
+config({ 
+    path: resolve(process.cwd(), 'saraha', 'config', envPath[NODE_ENV]) 
+});
 export const port = process.env.PORT ?? 7000
 export const DB_URI = process.env.DB_URI
 

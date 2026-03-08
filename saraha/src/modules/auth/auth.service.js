@@ -75,33 +75,28 @@ export const verifyEmail = async (inputs) => {
 
     return { message: "Email verified successfully" };
 };
-export const login = async (inputs, issuer) => {
+export const login = async (inputs, deviceName) => {
     const { email, password } = inputs;
 
     const user = await findOne({
         model: UserModel,
-        filter: { email , provider: ProviderEnum.System },
-        select: '+password +role' 
+        filter: { email }
     });
 
-    if (!user) {
-        throw NotFoundException({ message: 'Invalid login credentials' });
+    if (!user) throw NotFoundException({ message: "Invalid credentials" });
+
+    if (!user.confirmEmail) {
+        throw BadRequestException({ message: "Please verify your email first" });
     }
 
-    const match = await compareHash({ 
-        plaintext: password, 
-        cipherText: user.password, 
-        approach: HashApproachEnum.bcrypt 
-    });
+    const isMatch = await compareHash({ password, hashedValue: user.password });
+    if (!isMatch) throw BadRequestException({ message: "Invalid credentials" });
 
-    if (!match) {
-        throw NotFoundException({ message: 'Invalid login credentials' });
-    }
-
-    return await createLoginCredentials({ user, issuer });
+    const token = generateToken({ payload: { id: user._id, role: user.role } });
+    
+    return { token };
 };
 /*
-{
     iss: 'https://accounts.google.com',
     azp: '274006089540-up03ov50h5ogtb6eem6e40n9istrst06.apps.googleusercontent.com',
     aud: '274006089540-up03ov50h5ogtb6eem6e40n9istrst06.apps.googleusercontent.com',
