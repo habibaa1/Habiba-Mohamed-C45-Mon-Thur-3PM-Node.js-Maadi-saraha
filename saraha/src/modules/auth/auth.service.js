@@ -62,10 +62,10 @@ export const verifyEmail = async (inputs) => {
         filter: { email }
     });
 
-    if (!user) throw new NotFoundException({ message: "User not found" });
+    if (!user) throw NotFoundException({ message: "User not found" });
 
     if (user.otp !== otp || user.otpExpires < Date.now()) {
-        throw new BadRequestException({ message: "Invalid or expired OTP" });
+        throw BadRequestException({ message: "Invalid or expired OTP" });
     }
 
     await UserModel.updateOne(
