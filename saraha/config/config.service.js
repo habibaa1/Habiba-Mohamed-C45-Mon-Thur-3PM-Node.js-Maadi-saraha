@@ -11,8 +11,6 @@ const envPath = {
 config({ 
     path: resolve(process.cwd(), 'saraha', 'config', envPath[NODE_ENV]) 
 });
-export const port = process.env.PORT ?? 7000
-export const DB_URI = process.env.DB_URI
 
 export const ENC_BYTE = process.env.ENC_BYTE
 
