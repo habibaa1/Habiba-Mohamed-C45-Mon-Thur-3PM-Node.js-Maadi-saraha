@@ -1,5 +1,5 @@
 import { NODE_ENV, port } from '../config/config.service.js'
-import { connectDB } from './DB/index.js'
+import { connectDB, connectRedis } from './DB/index.js'
 import { authRouter, userRouter } from './modules/index.js'
 import cors from 'cors'
 import express from 'express'
@@ -13,7 +13,7 @@ async function bootstrap() {
     app.use('/uploads', express.static('../uploads'));
     // 2. Database Connection
     await connectDB()
-
+    await connectRedis()
     // 3. Application Routing
     app.get('/', (req, res) => res.send('Hello World!'))
     app.use('/auth', authRouter)

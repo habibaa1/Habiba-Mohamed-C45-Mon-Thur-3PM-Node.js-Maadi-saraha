@@ -4,14 +4,13 @@ import {RoleEnum} from '../../enums/user.enum.js';
 import {TokenTypeEnum , AudienceEnum} from '../../enums/security.enum.js';
 
 
-export const generateToken = async ({
+export const generateToken = ({
     payload = {},
     secret = config.User_TOKEN_SECRET_KEY,
     options = {}
 } = {}) => {
     return jwt.sign(payload, secret, options);
 };
-
 
 export const verifyToken = ({ token, secret, options = {} }) => {
     try {
@@ -40,8 +39,8 @@ export const getTokenSignature = async (role) => {
 export const createLoginCredentials = async ({ user, issuer }) => {
     const { accessSignature, refreshSignature, audience } = await getTokenSignature(user.role);
 
-    const access_token = await generateToken({
-        payload: { sub: user._id },
+    const accessToken = await generateToken({
+        payload: { sub: user._id, role: user.role },
         secret: accessSignature,
         options: {
             issuer,
@@ -50,7 +49,7 @@ export const createLoginCredentials = async ({ user, issuer }) => {
         }
     });
 
-    const refresh_token = await generateToken({
+    const refreshToken = await generateToken({ 
         payload: { sub: user._id },
         secret: refreshSignature,
         options: {
@@ -60,7 +59,7 @@ export const createLoginCredentials = async ({ user, issuer }) => {
         }
     });
 
-    return { access_token, refresh_token };
+    return { accessToken, refreshToken };
 };
 
 export const decodeToken = ({ token, signature }) => {

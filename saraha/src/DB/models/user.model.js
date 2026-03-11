@@ -29,6 +29,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: function () { return this.provider == ProviderEnum.System }
     },
+    passwordHistory: {
+    type: [String], 
+    default: []
+},
     otp: String,
     otpExpires: Date,
     phone: {
@@ -68,21 +72,30 @@ const userSchema = new mongoose.Schema({
 });
 
 // --- Pre-Save Hook ---
-userSchema.pre("save", async function () { 
+userSchema.pre("save", async function (next) { 
     try {
         if (this.isModified("password")) {
-            if (this.password !== this.confirmPassword) {
-                throw new Error("Passwords do not match!");
+            if (this.provider === ProviderEnum.System) {
+                if (!this.confirmPassword) {
+                    throw new Error("Please confirm your password");
+                }
+                if (this.password !== this.confirmPassword) {
+                    throw new Error("Passwords do not match!");
+                }
             }
-            
+
             this.password = await generateHash({ plaintext: this.password });
+            
+            this.changeCredentialsTime = Date.now();
         }
 
         if (this.isModified("phone") && this.phone) {
             this.phone = await encrypt(this.phone);
         }
+        
+        next(); 
     } catch (error) {
-        throw new Error(error.message); 
+        next(error);
     }
 });
 
