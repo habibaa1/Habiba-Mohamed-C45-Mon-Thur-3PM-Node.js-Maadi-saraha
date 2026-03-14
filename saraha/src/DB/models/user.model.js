@@ -71,8 +71,8 @@ const userSchema = new mongoose.Schema({
     toObject: { virtuals: true },
 });
 
-// --- Pre-Save Hook ---
-userSchema.pre("save", async function (next) { 
+
+userSchema.pre("save", async function () { 
     try {
         if (this.isModified("password")) {
             if (this.provider === ProviderEnum.System) {
@@ -85,7 +85,6 @@ userSchema.pre("save", async function (next) {
             }
 
             this.password = await generateHash({ plaintext: this.password });
-            
             this.changeCredentialsTime = Date.now();
         }
 
@@ -93,9 +92,8 @@ userSchema.pre("save", async function (next) {
             this.phone = await encrypt(this.phone);
         }
         
-        next(); 
     } catch (error) {
-        next(error);
+        throw error; 
     }
 });
 
@@ -114,7 +112,7 @@ userSchema.virtual("confirmPassword")
         this._confirmPassword = value; 
     })
     .get(function () {
-        return this._confirmPassword;
+        return undefined;
     });
 userSchema.virtual("profilePictureLink").get(function () {
     if (this.profilePicture && this.profilePicture.startsWith('http')) {

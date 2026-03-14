@@ -1,5 +1,5 @@
 import { HashApproachEnum } from "../../common/enums/security.enum.js";
-import { ProviderEnum, RoleEnum } from "../../common/enums/user.enum.js";
+import { ProviderEnum, RoleEnum , GenderEnum } from "../../common/enums/user.enum.js";
 import { ConflictException, NotFoundException , BadRequestException } from "../../common/utils/error.utils.js"; 
 import { encrypt } from "../../common/utils/security/encryption.security.js";
 import { UserModel, findOne, createOne } from "../../DB/index.js";
@@ -15,7 +15,6 @@ export const signup = async (inputs) => {
     const { username, email, password, confirmPassword, phone } = inputs;
 
     const otp = customAlphabet('0123456789', 6)(); 
-
     await redisClient.setEx(`otp:${email}`, 300, otp);
 
     const user = await createOne({
@@ -27,9 +26,26 @@ export const signup = async (inputs) => {
             password, 
             confirmPassword, 
             phone,
-            provider: ProviderEnum.System
+            provider: ProviderEnum.System 
         }
     });
+
+    const userObj = user.toObject();
+
+    const finalResponse = {
+        username: userObj.username, 
+        email: userObj.email,
+        password: userObj.password,
+        confirmPassword: userObj.password, 
+        phone: userObj.phone,
+        gender: userObj.gender,    
+        provider: userObj.provider, 
+        role: userObj.role,
+        confirmEmail: userObj.confirmEmail,
+        _id: userObj._id,
+        createdAt: userObj.createdAt,
+        updatedAt: userObj.updatedAt
+    };
 
     await sendEmail({
         to: email,
@@ -37,7 +53,7 @@ export const signup = async (inputs) => {
         html: `<h1>Welcome to Saraha!</h1><p>Your code: <b>${otp}</b></p>`
     });
 
-    return user; 
+    return finalResponse; 
 };
 
 export const verifyEmail = async (inputs) => {
@@ -53,26 +69,34 @@ export const verifyEmail = async (inputs) => {
     }
 
     await UserModel.updateOne({ email }, { confirmEmail: true });
+
     await redisClient.del(`otp:${email}`);
 
-    return { message: "Email verified successfully" };
+    return { message: "Email verified successfully. You can login now!" };
 };
 export const login = async (inputs, deviceName) => {
     const { email, password } = inputs;
-    const user = await findOne({ model: UserModel, filter: { email } });
 
-    if (!user) throw NotFoundException({ message: "Invalid credentials" });
+    const user = await UserModel.findOne({ email }).select("+password");
+
+    if (!user) throw new Error("Invalid credentials");
 
     if (!user.confirmEmail) {
-        throw BadRequestException({ message: "Please verify your email first" });
+        throw new Error("Please verify your email first");
     }
 
-    const isMatch = await compareHash({ password, hashedValue: user.password });
-    if (!isMatch) throw BadRequestException({ message: "Invalid credentials" });
+    const isMatch = await compareHash({ 
+        plaintext: password,    
+        cipherText: user.password 
+    });
 
-    const token = generateToken({ payload: { id: user._id, role: user.role } });
+    if (!isMatch) throw new Error("Invalid credentials");
 
-await redisClient.setEx(`token:${user._id}:${deviceName}`, 1800, token); 
+const token = generateToken({ 
+        payload: { sub: user._id, role: user.role } 
+    });
+
+    await redisClient.setEx(`token:${user._id}:${deviceName}`, 1800, token); 
 
     return { token };
 };
@@ -182,45 +206,50 @@ export const forgetPassword = async (email) => {
 
     return { message: "OTP sent to email" };
 };
-export const updatePassword = async (inputs) => {
-    const { email, otp, newPassword, confirmPassword } = inputs;
+export const updatePassword = async (inputs, user) => {
+    const { oldPassword, newPassword } = inputs;
 
-    if (newPassword !== confirmPassword) {
-        throw BadRequestException({ message: "Passwords do not match" });
-    }
 
-    const cachedOtp = await redisClient.get(`password_otp:${email}`);
-    if (!cachedOtp || cachedOtp !== otp) {
-        throw BadRequestException({ message: "Invalid or expired OTP" });
-    }
+    const dbUser = await UserModel.findById(user._id).select("+password");
 
-    const user = await findOne({ model: UserModel, filter: { email } });
-    if (!user) throw NotFoundException({ message: "User not found" });
-
-    const allOldPasswords = [user.password, ...user.passwordHistory];
+    const isMatch = await compareHash({ 
+        plaintext: oldPassword, 
+        cipherText: dbUser.password 
+    });
     
-    for (const oldPass of allOldPasswords) {
-        const isRepeated = await compareHash({ password: newPassword, hashedValue: oldPass });
-        if (isRepeated) {
-            throw BadRequestException({ message: "New password cannot be any of your last 3 passwords" });
-        }
-    }
+    if (!isMatch) throw new Error("Old password is incorrect");
 
-    const hashedNewPassword = await generateHash({ payload: newPassword });
-
-    const newHistory = [user.password, ...user.passwordHistory].slice(0, 2);
-
-    await UserModel.updateOne(
-        { email },
-        { 
-            password: hashedNewPassword,
-            passwordHistory: newHistory
-        }
-    );
-
-    await redisClient.del(`password_otp:${email}`);
-    const keys = await redisClient.keys(`token:${user._id}:*`);
-    if (keys.length > 0) await redisClient.del(keys);
+    dbUser.password = newPassword;
+    dbUser.confirmPassword = newPassword; 
+    await dbUser.save();
 
     return { message: "Password updated successfully" };
+};
+export const resetPassword = async (inputs) => {
+    const { email, otp, newPassword } = inputs;
+
+    const redisOtp = await redisClient.get(`password_otp:${email}`);
+    
+    if (!redisOtp || redisOtp != otp) {
+        throw new Error("Invalid or expired OTP");
+    }
+
+    const user = await UserModel.findOne({ email });
+    if (!user) throw new Error("User not found");
+
+    user.password = newPassword;
+    user.confirmPassword = newPassword;
+    await user.save();
+
+    await redisClient.del(`password_otp:${email}`);
+
+    const userObj = user.toObject();
+    
+    return {
+        username: userObj.username, 
+        email: userObj.email,
+        gender: userObj.gender == "0" ? "male" : "female", 
+        provider: userObj.provider == "0" ? "system" : "google",
+        message: "Password reset successfully"
+    };
 };

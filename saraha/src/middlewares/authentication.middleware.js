@@ -18,7 +18,7 @@ export const authentication = (tokenType = TokenTypeEnum.Access) => {
 
                 const payload = decodeToken({ token: credentials, signature });
                 
-                if (!payload || !payload.sub) {
+                if (!payload || !payload.sub) { 
                     return res.status(401).json({ message: "Invalid or expired token" });
                 }
 
