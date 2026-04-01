@@ -86,5 +86,31 @@ router.post("/signup/gmail", async (req, res, next) => {
         return successResponse({ res, status, data: { ...Credential } });
     } catch (error) { next(error); }
 });
+router.post("/confirm-login-otp", async (req, res, next) => {
+    try {
+        const result = await authService.confirmLoginOTP(req.body, "web");
+        return successResponse({ res, data: result });
+    } catch (error) { next(error); }
+});
 
+router.patch("/2fa-toggle", authentication(), async (req, res, next) => {
+    try {
+        const result = await authService.toggleTwoStep(req.user._id, req.body.enable);
+        return successResponse({ res, data: result });
+    } catch (error) { next(error); }
+});
+
+router.post("/forget-password-link", async (req, res, next) => {
+    try {
+        await authService.sendResetLink(req.body.email);
+        return successResponse({ res, message: "Reset link sent to your email" });
+    } catch (error) { next(error); }
+});
+
+router.patch("/reset-password-link/:token", async (req, res, next) => {
+    try {
+        const result = await authService.resetWithLink(req.params.token, req.body.newPassword);
+        return successResponse({ res, data: result });
+    } catch (error) { next(error); }
+});
 export default router;

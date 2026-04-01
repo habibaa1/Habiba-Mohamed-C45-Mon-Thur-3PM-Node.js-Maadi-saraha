@@ -76,31 +76,72 @@ export const verifyEmail = async (inputs) => {
 };
 export const login = async (inputs, deviceName) => {
     const { email, password } = inputs;
-
-    const user = await UserModel.findOne({ email }).select("+password");
+    const user = await UserModel.findOne({ email }).select("+password +loginAttempts +lockUntil");
 
     if (!user) throw new Error("Invalid credentials");
 
-    if (!user.confirmEmail) {
-        throw new Error("Please verify your email first");
+    if (user.lockUntil && user.lockUntil > Date.now()) {
+        const remainingMinutes = Math.ceil((user.lockUntil - Date.now()) / 60000);
+        throw new Error(`Account locked. Try again in ${remainingMinutes} minutes`);
     }
 
-    const isMatch = await compareHash({ 
-        plaintext: password,    
-        cipherText: user.password 
-    });
+    const isMatch = await compareHash({ plaintext: password, cipherText: user.password });
 
-    if (!isMatch) throw new Error("Invalid credentials");
+    if (!isMatch) {
+        user.loginAttempts += 1;
+        if (user.loginAttempts >= 5) {
+            user.lockUntil = new Date(Date.now() + 5 * 60000); 
+            user.loginAttempts = 0; 
+        }
+        await user.save();
+        throw new Error("Invalid credentials");
+    }
 
-const token = generateToken({ 
-        payload: { sub: user._id, role: user.role } 
-    });
+    user.loginAttempts = 0;
+    user.lockUntil = undefined;
+    await user.save();
 
-    await redisClient.setEx(`token:${user._id}:${deviceName}`, 1800, token); 
+    if (user.isTwoStepVerification) {
+        const otp = customAlphabet('0123456789', 6)();
+        await redisClient.setEx(`2fa:otp:${user._id}`, 300, otp);
+        await sendEmail({
+            to: user.email,
+            subject: "Login Verification Code",
+            html: `<p>Your login code is: <b>${otp}</b></p>`
+        });
+        return { message: "Two-step verification required", twoStepRequired: true, userId: user._id };
+    }
 
+    const token = generateToken({ payload: { sub: user._id, role: user.role } });
+    await redisClient.setEx(`token:${user._id}:${deviceName}`, 1800, token);
+    return { token };
+};
+export const confirmLoginOTP = async (inputs, deviceName) => {
+    const { userId, otp } = inputs;
+    const cachedOtp = await redisClient.get(`2fa:otp:${userId}`);
+
+    if (!cachedOtp || cachedOtp !== otp) throw new Error("Invalid or expired OTP");
+
+    const user = await UserModel.findById(userId);
+    const token = generateToken({ payload: { sub: user._id, role: user.role } });
+    
+    await redisClient.del(`2fa:otp:${userId}`);
+    await redisClient.setEx(`token:${user._id}:${deviceName}`, 1800, token);
     return { token };
 };
 
+export const toggleTwoStep = async (userId, enable) => {
+    const user = await UserModel.findById(userId);
+    if (enable) {
+        const otp = customAlphabet('0123456789', 6)();
+        await redisClient.setEx(`enable_2fa:otp:${userId}`, 300, otp);
+        await sendEmail({ to: user.email, subject: "Enable 2FA", html: `Code: ${otp}` });
+        return { message: "OTP sent to confirm enabling 2FA" };
+    }
+    user.isTwoStepVerification = false;
+    await user.save();
+    return { message: "Two-step verification disabled" };
+};
 export const logout = async (userId, deviceName, allDevices = false) => {
     if (allDevices) {
         const keys = await redisClient.keys(`token:${userId}:*`);

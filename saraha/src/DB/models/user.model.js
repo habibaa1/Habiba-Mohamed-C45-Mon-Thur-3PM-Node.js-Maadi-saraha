@@ -55,6 +55,14 @@ const userSchema = new mongoose.Schema({
     },
     profilePicture: String,
     coverprofilePicture: [String],
+    loginAttempts: { type: Number, default: 0 },
+    gallery: [String],       
+    viewers: [{ 
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    time: { type: Date, default: Date.now }
+    }],
+    lockUntil: { type: Date },
+    isTwoStepVerification: { type: Boolean, default: false },
     confirmEmail: {
         type: Boolean,
         default: false
@@ -95,6 +103,11 @@ userSchema.pre("save", async function () {
     } catch (error) {
         throw error; 
     }
+});
+
+userSchema.index({ createdAt: 1 }, { 
+    expireAfterSeconds: 86400, 
+    partialFilterExpression: { confirmEmail: false } 
 });
 
 // --- Virtuals ---
